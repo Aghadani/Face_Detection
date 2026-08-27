@@ -1,15 +1,3 @@
-"""
-Streamlit app: Face Mesh + Hand Gesture Color Control (deploy-ready)
-
-Uses streamlit-webrtc so the video runs as real browser-side WebRTC
-streaming (not a polling loop), suitable for local use or deployment
-(e.g. Streamlit Community Cloud, with a STUN/TURN server configured
-for NAT traversal in restrictive networks).
-
-Run:
-    streamlit run streamlit_app.py
-"""
-
 import threading
 
 import av
