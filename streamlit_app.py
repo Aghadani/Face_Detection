@@ -31,9 +31,9 @@ RTC_CONFIGURATION = RTCConfiguration(
 class FaceGestureProcessor(VideoProcessorBase):
 
     def __init__(self):
-        # Instantiate per thread to avoid C++ state mutation across WebRTC reconnects
-        self.face_landmarker = create_face_landmarker()
-        self.hand_landmarker = create_hand_landmarker()
+        # Lazy initialization flags to avoid unsafe thread-spawning during __init__
+        self.face_landmarker = None
+        self.hand_landmarker = None
         self.smoother = GestureSmoother()
 
         self._lock = threading.Lock()
@@ -49,6 +49,12 @@ class FaceGestureProcessor(VideoProcessorBase):
         return int((time.monotonic() - self._start_time) * 1000)
 
     def recv(self, frame):
+        # Instantiate landmarker instances inside the processing loop context
+        if self.face_landmarker is None:
+            self.face_landmarker = create_face_landmarker()
+        if self.hand_landmarker is None:
+            self.hand_landmarker = create_hand_landmarker()
+
         img = frame.to_ndarray(format="bgr24")
         img = cv2.flip(img, 1)
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
