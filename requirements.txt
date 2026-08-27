@@ -1,4 +1,6 @@
-opencv-python-headless>=4.8.0
+--extra-index-url https://pypi.org/simple
+
+opencv-python-headless>=4.8.0.74
 mediapipe>=0.10.9
 numpy>=1.26.0
 streamlit>=1.30.0
