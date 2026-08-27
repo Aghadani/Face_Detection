@@ -28,21 +28,12 @@ RTC_CONFIGURATION = RTCConfiguration(
 )
 
 
-@st.cache_resource
-def get_cached_face_landmarker():
-    return create_face_landmarker()
-
-
-@st.cache_resource
-def get_cached_hand_landmarker():
-    return create_hand_landmarker()
-
-
 class FaceGestureProcessor(VideoProcessorBase):
 
     def __init__(self):
-        self.face_landmarker = get_cached_face_landmarker()
-        self.hand_landmarker = get_cached_hand_landmarker()
+        # Instantiate landmarkers per processor instance to avoid cross-thread C++ state mutation
+        self.face_landmarker = create_face_landmarker()
+        self.hand_landmarker = create_hand_landmarker()
         self.smoother = GestureSmoother()
 
         self._lock = threading.Lock()
@@ -133,8 +124,12 @@ def main():
             "- anything else -> Gray"
         )
 
+    # Pre-initialize Streamlit session state to protect internal webrtc callbacks
+    if "webrtc_active" not in st.session_state:
+        st.session_state["webrtc_active"] = True
+
     webrtc_streamer(
-        key="face-gesture-mesh",
+        key="face-gesture-mesh-v2",  # Key updated to force fresh session registration
         video_processor_factory=FaceGestureProcessor,
         rtc_configuration=RTC_CONFIGURATION,
         media_stream_constraints={"video": True, "audio": False},
