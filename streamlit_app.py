@@ -1,8 +1,24 @@
+"""
+Streamlit app: Face Mesh + Hand Gesture Color Control (deploy-ready)
+
+Uses streamlit-webrtc for real browser-side WebRTC video streaming, and
+MediaPipe's Tasks API (FaceLandmarker / HandLandmarker) for detection --
+the legacy `mediapipe.solutions` API used in earlier mediapipe releases
+has been removed from current mediapipe versions entirely.
+
+Run:
+    streamlit run streamlit_app.py
+
+First run will download two small model files (face_landmarker.task,
+hand_landmarker.task) from Google's model hosting and cache them in
+the system temp dir -- this needs outbound internet access once.
+"""
+
 import threading
+import time
 
 import av
 import cv2
-import mediapipe as mp
 import numpy as np
 import streamlit as st
 from streamlit_webrtc import RTCConfiguration, VideoProcessorBase, webrtc_streamer
@@ -14,6 +30,7 @@ from gesture_logic import (
     draw_face_mesh_panel,
     fingers_up,
 )
+from landmarkers import create_face_landmarker, create_hand_landmarker, to_image
 
 PANEL_W, PANEL_H = 480, 360  # smaller per-panel size keeps WebRTC bitrate reasonable
 
@@ -23,59 +40,58 @@ RTC_CONFIGURATION = RTCConfiguration(
 
 
 class FaceGestureProcessor(VideoProcessorBase):
+    """Runs face-mesh + hand-gesture detection per frame and returns a
+    single combined (split-screen) frame. State the main Streamlit thread
+    reads (current gesture) is guarded by a lock, since recv() runs on a
+    separate WebRTC worker thread."""
 
     def __init__(self):
-        mp_face_mesh = mp.solutions.face_mesh
-        mp_hands = mp.solutions.hands
-
-        self.mp_hands = mp_hands
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mp_styles = mp.solutions.drawing_styles
-        self.connections = list(mp_face_mesh.FACEMESH_TESSELATION)
-
-        self.face_mesh = mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        self.hands = mp_hands.Hands(
-            max_num_hands=1,
-            min_detection_confidence=0.6,
-            min_tracking_confidence=0.5,
-        )
+        self.face_landmarker = create_face_landmarker()
+        self.hand_landmarker = create_hand_landmarker()
         self.smoother = GestureSmoother()
 
         self._lock = threading.Lock()
         self._last_gesture = "UNKNOWN"
+        self._start_time = time.monotonic()
 
     @property
     def last_gesture(self):
         with self._lock:
             return self._last_gesture
 
+    def _timestamp_ms(self):
+        # VIDEO mode requires monotonically increasing timestamps;
+        # wall-clock-since-start guarantees that regardless of frame gaps.
+        return int((time.monotonic() - self._start_time) * 1000)
+
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
         img = cv2.flip(img, 1)
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        mp_image = to_image(rgb)
+        ts = self._timestamp_ms()
 
-        face_results = self.face_mesh.process(rgb)
-        hand_results = self.hands.process(rgb)
+        face_result = self.face_landmarker.detect_for_video(mp_image, ts)
+        hand_result = self.hand_landmarker.detect_for_video(mp_image, ts)
 
+        h, w = img.shape[:2]
+
+        # --- Hand gesture ---
         gesture = "UNKNOWN"
-        if hand_results.multi_hand_landmarks and hand_results.multi_handedness:
-            hand_lms = hand_results.multi_hand_landmarks[0]
-            handedness_label = hand_results.multi_handedness[0].classification[0].label
-            coords = [(lm.x, lm.y, lm.z) for lm in hand_lms.landmark]
+        if hand_result.hand_landmarks and hand_result.handedness:
+            hand_lms = hand_result.hand_landmarks[0]
+            handedness_label = hand_result.handedness[0][0].category_name
+            coords = [(lm.x, lm.y, lm.z) for lm in hand_lms]
             state = fingers_up(coords, handedness_label)
             raw_gesture = classify_gesture(state)
             gesture = self.smoother.update(raw_gesture)
 
-            self.mp_drawing.draw_landmarks(
-                img, hand_lms, self.mp_hands.HAND_CONNECTIONS,
-                self.mp_styles.get_default_hand_landmarks_style(),
-                self.mp_styles.get_default_hand_connections_style(),
-            )
+            # Manual landmark drawing (mp.solutions.drawing_utils no
+            # longer exists) -- just dots + bone lines, good enough for
+            # visual feedback of what the classifier is seeing.
+            for lm in hand_lms:
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                cv2.circle(img, (cx, cy), 3, (0, 255, 0), -1)
         else:
             gesture = self.smoother.update("UNKNOWN")
 
@@ -84,15 +100,13 @@ class FaceGestureProcessor(VideoProcessorBase):
 
         color = GESTURE_COLORS[gesture]
 
-        face_px = None
-        if face_results.multi_face_landmarks:
-            face_lms = face_results.multi_face_landmarks[0]
-            face_px = [
-                (int(lm.x * PANEL_W), int(lm.y * PANEL_H))
-                for lm in face_lms.landmark
-            ]
+        # --- Face mesh panel ---
+        face_px = []
+        if face_result.face_landmarks:
+            face_lms = face_result.face_landmarks[0]
+            face_px = [(lm.x * PANEL_W, lm.y * PANEL_H) for lm in face_lms]
 
-        mesh_panel = draw_face_mesh_panel(face_px, color, self.connections, PANEL_W, PANEL_H)
+        mesh_panel = draw_face_mesh_panel(face_px, color, PANEL_W, PANEL_H)
 
         left = cv2.resize(img, (PANEL_W, PANEL_H))
         cv2.putText(left, f"Gesture: {gesture}", (10, 25),
@@ -124,7 +138,9 @@ def main():
         st.caption(
             "Rule-based classifier on 2D landmarks -- thumb detection is "
             "the weakest point, and peace/point can be confused during "
-            "finger transitions. Smoothed over 8 frames to reduce flicker."
+            "finger transitions. Smoothed over 8 frames to reduce flicker. "
+            "First load downloads two small model files -- may take a "
+            "few seconds."
         )
 
     webrtc_streamer(
