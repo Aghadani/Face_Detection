@@ -23,10 +23,6 @@ RTC_CONFIGURATION = RTCConfiguration(
 
 
 class FaceGestureProcessor(VideoProcessorBase):
-    """Runs face-mesh + hand-gesture detection per frame and returns a
-    single combined (split-screen) frame. State that the main Streamlit
-    thread reads (current gesture) is guarded by a lock, since this
-    recv() callback runs on a separate WebRTC worker thread."""
 
     def __init__(self):
         mp_face_mesh = mp.solutions.face_mesh
