@@ -1,3 +1,30 @@
+import sys
+
+# --- MONKEY-PATCH FOR PYTHON 3.14 + AIOICE/STUN TEARDOWN ERROR ---
+# Must be executed BEFORE importing/running streamlit-webrtc
+try:
+    import aioice.stun
+
+    def _safe_retry(self):
+        try:
+            # Access protocol dynamically to handle name mangling safely
+            protocol = getattr(self, "_Transaction__protocol", None)
+            request = getattr(self, "_Transaction__request", None)
+            addr = getattr(self, "_Transaction__addr", None)
+
+            if protocol is not None and getattr(protocol, "transport", None) is not None:
+                if getattr(protocol.transport, "_sock", None) is not None:
+                    protocol.send_stun(request, addr)
+        except Exception:
+            # Quietly suppress closed transport/NoneType errors during Streamlit reruns
+            pass
+
+    # Replace the retry callback with the safe wrapper
+    aioice.stun.Transaction._Transaction__retry = _safe_retry
+except Exception:
+    pass
+# ------------------------------------------------------------------
+
 import threading
 import time
 
@@ -18,18 +45,16 @@ from landmarkers import create_face_landmarker, create_hand_landmarker, to_image
 
 PANEL_W, PANEL_H = 480, 360  # Smaller per-panel size keeps WebRTC bitrate reasonable
 
-# Added fallback STUN servers to avoid STUN connection timeout retries
 RTC_CONFIGURATION = RTCConfiguration(
     {
         "iceServers": [
             {"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]},
+            {"urls": ["stun:global.stun.twilio.com:3478"]},
         ]
     }
 )
 
 
-# Cache landmarker models so C++ initializations are not spawned repeatedly on worker threads
 @st.cache_resource
 def get_cached_face_landmarker():
     return create_face_landmarker()
@@ -43,7 +68,6 @@ def get_cached_hand_landmarker():
 class FaceGestureProcessor(VideoProcessorBase):
 
     def __init__(self):
-        # Fetch instances safely
         self.face_landmarker = get_cached_face_landmarker()
         self.hand_landmarker = get_cached_hand_landmarker()
         self.smoother = GestureSmoother()
@@ -67,7 +91,6 @@ class FaceGestureProcessor(VideoProcessorBase):
         mp_image = to_image(rgb)
         ts = self._timestamp_ms()
 
-        # Run inference safely
         face_result = self.face_landmarker.detect_for_video(mp_image, ts)
         hand_result = self.hand_landmarker.detect_for_video(mp_image, ts)
 
@@ -116,7 +139,6 @@ class FaceGestureProcessor(VideoProcessorBase):
         combined = np.hstack([left, mesh_panel])
         return av.VideoFrame.from_ndarray(combined, format="bgr24")
 
-    # Added explicit WebRTC teardown hook to clean up locks safely on disconnect
     def close(self):
         with self._lock:
             self._last_gesture = "STOPPED"
@@ -152,7 +174,7 @@ def main():
         video_processor_factory=FaceGestureProcessor,
         rtc_configuration=RTC_CONFIGURATION,
         media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,  # Prevents UI freeze when frames queue up
+        async_processing=True,
     )
 
 
