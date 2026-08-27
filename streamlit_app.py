@@ -31,7 +31,7 @@ RTC_CONFIGURATION = RTCConfiguration(
 class FaceGestureProcessor(VideoProcessorBase):
 
     def __init__(self):
-        # Instantiate landmarkers per processor instance to avoid cross-thread C++ state mutation
+        # Instantiate per thread to avoid C++ state mutation across WebRTC reconnects
         self.face_landmarker = create_face_landmarker()
         self.hand_landmarker = create_hand_landmarker()
         self.smoother = GestureSmoother()
@@ -124,12 +124,9 @@ def main():
             "- anything else -> Gray"
         )
 
-    # Pre-initialize Streamlit session state to protect internal webrtc callbacks
-    if "webrtc_active" not in st.session_state:
-        st.session_state["webrtc_active"] = True
-
+    # Key changed to reset cached frontend state on deployment rebuild
     webrtc_streamer(
-        key="face-gesture-mesh-v2",  # Key updated to force fresh session registration
+        key="face-gesture-mesh-v3",
         video_processor_factory=FaceGestureProcessor,
         rtc_configuration=RTC_CONFIGURATION,
         media_stream_constraints={"video": True, "audio": False},
