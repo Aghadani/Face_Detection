@@ -36,7 +36,7 @@ gesture-recognition model, so:
   frontal hand orientation. Rotate your hand 30-40 degrees and it
   will misclassify thumb state.
 - **Peace vs. Point can be confused** at the frame where a finger is
-  transitioning — the 8-frame majority-vote smoother reduces flicker
+  transitioning the 8-frame majority-vote smoother reduces flicker
   but does not eliminate misreads during the transition itself.
 - **Lighting and occlusion** (fingers overlapping each other, hand
   partially out of frame) degrade MediaPipe's underlying landmark
@@ -44,7 +44,7 @@ gesture-recognition model, so:
 - If you need higher reliability for a demo, the next step up is
   collecting labeled gesture samples and training a small classifier
   (e.g. an MLP on the 21 landmark coordinates) instead of hand-coded
-  rules — happy to help build that if this matters for the final
+  rules happy to help build that if this matters for the final
   version.
 
 ## Streamlit version (browser, deploy-ready)
@@ -66,12 +66,12 @@ streaming rather than a polling loop — it's the version to deploy
   STUN server, which is enough on most home/office networks. On
   restrictive networks (corporate firewalls, some mobile carriers,
   most cloud NAT setups) STUN alone isn't enough and connections will
-  fail silently — you'd need a TURN server (e.g. via Twilio, or your
+  fail silently you'd need a TURN server (e.g. via Twilio, or your
   own coturn instance) added to `RTC_CONFIGURATION` in
   `streamlit_app.py`.
 - I verified `streamlit`, `streamlit-webrtc`, `av`, and `aiortc`
   install and import cleanly, and re-ran the gesture-classification
-  unit test against the shared logic module — but I could not test
+  unit test against the shared logic module but I could not test
   the actual video pipeline end-to-end (no camera in the environment
   I built this in). The first time you run it locally is the real test
   of the WebRTC + MediaPipe integration.
@@ -82,8 +82,8 @@ streaming rather than a polling loop — it's the version to deploy
 
 ## Files
 
-- `main.py` — desktop OpenCV window version
-- `streamlit_app.py` — Streamlit + streamlit-webrtc browser version
-- `gesture_logic.py` — shared, unit-tested gesture classification and
+- `main.py`: desktop OpenCV window version
+- `streamlit_app.py`: Streamlit + streamlit-webrtc browser version
+- `gesture_logic.py`: shared, unit-tested gesture classification and
   rendering logic used by both apps
-- `requirements.txt` — dependencies for both versions
+- `requirements.txt`: dependencies for both versions
