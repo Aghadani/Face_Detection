@@ -1,30 +1,3 @@
-import sys
-
-# --- MONKEY-PATCH FOR PYTHON 3.14 + AIOICE/STUN TEARDOWN ERROR ---
-# Must be executed BEFORE importing/running streamlit-webrtc
-try:
-    import aioice.stun
-
-    def _safe_retry(self):
-        try:
-            # Access protocol dynamically to handle name mangling safely
-            protocol = getattr(self, "_Transaction__protocol", None)
-            request = getattr(self, "_Transaction__request", None)
-            addr = getattr(self, "_Transaction__addr", None)
-
-            if protocol is not None and getattr(protocol, "transport", None) is not None:
-                if getattr(protocol.transport, "_sock", None) is not None:
-                    protocol.send_stun(request, addr)
-        except Exception:
-            # Quietly suppress closed transport/NoneType errors during Streamlit reruns
-            pass
-
-    # Replace the retry callback with the safe wrapper
-    aioice.stun.Transaction._Transaction__retry = _safe_retry
-except Exception:
-    pass
-# ------------------------------------------------------------------
-
 import threading
 import time
 
@@ -43,7 +16,7 @@ from gesture_logic import (
 )
 from landmarkers import create_face_landmarker, create_hand_landmarker, to_image
 
-PANEL_W, PANEL_H = 480, 360  # Smaller per-panel size keeps WebRTC bitrate reasonable
+PANEL_W, PANEL_H = 480, 360
 
 RTC_CONFIGURATION = RTCConfiguration(
     {
@@ -139,10 +112,6 @@ class FaceGestureProcessor(VideoProcessorBase):
         combined = np.hstack([left, mesh_panel])
         return av.VideoFrame.from_ndarray(combined, format="bgr24")
 
-    def close(self):
-        with self._lock:
-            self._last_gesture = "STOPPED"
-
 
 def main():
     st.set_page_config(page_title="Face Mesh + Gesture Color", layout="wide")
@@ -162,11 +131,6 @@ def main():
             "- **Thumbs up** -> Yellow\n"
             "- **Point** -> Magenta\n"
             "- anything else -> Gray"
-        )
-        st.caption(
-            "Rule-based classifier on 2D landmarks -- thumb detection is "
-            "the weakest point, and peace/point can be confused during "
-            "finger transitions. Smoothed over 8 frames to reduce flicker."
         )
 
     webrtc_streamer(
