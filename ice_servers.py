@@ -1,31 +1,3 @@
-"""
-ICE server (STUN/TURN) configuration for WebRTC.
-
-Streamlit Community Cloud's network does not complete a WebRTC peer
-connection with STUN alone -- a TURN relay is required (confirmed via
-streamlit-webrtc's own maintainer). This module provides two free
-options, no paid service, no VPS:
-
-1. A free account + API key at metered.ca (Open Relay Project), which
-   fetches time-bound credentials via their REST API. More reliable,
-   requires a one-time free signup (email-based, not phone verification).
-2. Fallback: the static, zero-signup public credentials Open Relay
-   Project publishes for anyone to use. Convenient, but explicitly
-   flagged by streamlit-webrtc's maintainer as unreliable -- it can go
-   down or get overloaded since it's a shared public resource with no
-   account behind it.
-
-If you sign up for a free Metered account, set these two Streamlit
-secrets (Settings -> Secrets on Streamlit Cloud, or .streamlit/secrets.toml
-locally):
-
-    METERED_APP_NAME = "your-app-name"   # the subdomain in your dashboard
-    METERED_API_KEY = "your-api-key"
-
-Without those set, this automatically falls back to the static
-credentials -- the app will still run, just less reliably.
-"""
-
 import logging
 
 import requests
@@ -33,9 +5,7 @@ import streamlit as st
 
 logger = logging.getLogger(__name__)
 
-# Static, zero-signup fallback credentials (Open Relay Project's public
-# shared TURN server). No account needed, but shared/public and known to
-# be unreliable under load -- see module docstring.
+
 _FALLBACK_ICE_SERVERS = [
     {"urls": "stun:stun.relay.metered.ca:80"},
     {
@@ -53,10 +23,6 @@ _FALLBACK_ICE_SERVERS = [
 
 @st.cache_data(ttl=1800)  # Metered credentials are time-bound; refresh periodically
 def get_ice_servers():
-    """Returns a list of ICE server dicts for RTCConfiguration. Tries a
-    Metered API key from st.secrets first; falls back to the static
-    public Open Relay credentials if no key is configured or the API
-    call fails."""
     try:
         app_name = st.secrets["METERED_APP_NAME"]
         api_key = st.secrets["METERED_API_KEY"]
