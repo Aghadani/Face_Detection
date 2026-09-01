@@ -26,20 +26,32 @@ and `streamlit-webrtc`'s own maintainer flags it as unreliable. If
 your video won't connect, this relay being overloaded is the most
 likely reason, not a bug in the app.
 
-**More reliable, still free: a Metered account.** Sign up free at
-metered.ca (email-based, not phone verification — worth trying if
-Twilio's phone verification didn't work for you), then set two
-Streamlit secrets:
+**More reliable, still free: a Metered account.** The static relay
+above just failed again in your log with the same connection-teardown
+error as before — that confirms it, this isn't reliable enough to
+depend on. Steps to switch to the reliable free path:
+
+1. Sign up free at https://dashboard.metered.ca/signup (email-based,
+   not phone verification).
+2. Note your app name from the dashboard sidebar (your domain will be
+   `<that-name>.metered.live`).
+3. Go to the **TURN Server** page in the dashboard and click
+   **"Generate Your First Credential"** (or **"Add Credential"**).
+4. Once created, click **"Show API Key"** next to that credential —
+   this is a credential-scoped key, safe to use directly (not your
+   account's Secret Key).
+5. Set these as Streamlit secrets (Settings -> Secrets on Streamlit
+   Cloud, or `.streamlit/secrets.toml` locally):
 
 ```toml
-METERED_APP_NAME = "your-app-name"   # the subdomain shown in your dashboard
-METERED_API_KEY = "your-api-key"
+METERED_APP_NAME = "your-app-name"   # from step 2
+METERED_API_KEY = "your-api-key"     # from step 4
 ```
 
-`ice_servers.py` fetches time-bound credentials from Metered's API
-when these are set, and automatically falls back to the static public
-credentials if they're missing or the request fails — so the app
-works either way, just more reliably with a key configured.
+`ice_servers.py` fetches these credentials automatically when the
+secrets are set, and falls back to the static public relay if they're
+missing or the request fails — so the app degrades gracefully rather
+than breaking if you remove the secrets later.
 
 I verified the fallback TURN hostname resolves via DNS, but a full
 TURN relay handshake needs live UDP traffic I can't test from the
