@@ -1,11 +1,30 @@
-import threading
+"""
+Streamlit app: Face Mesh + Hand Gesture Color Control (no external services)
+
+Uses st.camera_input instead of streamlit-webrtc. This is a deliberate
+trade-off: st.camera_input captures one photo per click rather than a
+continuous video stream, so this is NOT live/real-time video -- but it
+has zero external dependencies (no WebRTC, no STUN/TURN server, no
+third-party API/account needed) and works reliably on Streamlit
+Community Cloud out of the box.
+
+Background: an earlier version of this app used streamlit-webrtc for
+true continuous live video. That requires a WebRTC peer connection
+between the browser and the server, and Streamlit Community Cloud's
+network does not complete that connection with a STUN server alone --
+it needs a TURN relay (a third-party service, e.g. Twilio, or a
+self-hosted coturn server). Since a TURN service was explicitly ruled
+out, this version avoids WebRTC entirely.
+
+Run:
+    streamlit run streamlit_app.py
+"""
+
 import time
 
-import av
 import cv2
 import numpy as np
 import streamlit as st
-from streamlit_webrtc import RTCConfiguration, VideoProcessorBase, webrtc_streamer
 
 from gesture_logic import (
     GESTURE_COLORS,
@@ -18,96 +37,62 @@ from landmarkers import create_face_landmarker, create_hand_landmarker, to_image
 
 PANEL_W, PANEL_H = 480, 360
 
-RTC_CONFIGURATION = RTCConfiguration(
-    {
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:global.stun.twilio.com:3478"]},
-        ]
-    }
-)
+
+@st.cache_resource
+def load_landmarkers():
+    """Loaded once per server process (cached across reruns/sessions).
+    Uses IMAGE running mode -- each camera_input capture is an independent
+    photo with no temporal relationship to the previous one, so VIDEO
+    mode's frame-to-frame tracking assumptions don't apply here."""
+    import mediapipe.tasks.python.vision as mp_vision
+    face = create_face_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
+    hand = create_hand_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
+    return face, hand
 
 
-class FaceGestureProcessor(VideoProcessorBase):
+def process_snapshot(frame_bgr, face_landmarker, hand_landmarker, smoother):
+    """Runs detection on a single captured photo and returns the combined
+    split-screen image plus the detected gesture name."""
+    frame_bgr = cv2.flip(frame_bgr, 1)
+    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    mp_image = to_image(rgb)
 
-    def __init__(self):
-        # Lazy initialization flags to avoid unsafe thread-spawning during __init__
-        self.face_landmarker = None
-        self.hand_landmarker = None
-        self.smoother = GestureSmoother()
+    face_result = face_landmarker.detect(mp_image)
+    hand_result = hand_landmarker.detect(mp_image)
 
-        self._lock = threading.Lock()
-        self._last_gesture = "UNKNOWN"
-        self._start_time = time.monotonic()
+    h, w = frame_bgr.shape[:2]
 
-    @property
-    def last_gesture(self):
-        with self._lock:
-            return self._last_gesture
+    gesture = "UNKNOWN"
+    if hand_result.hand_landmarks and hand_result.handedness:
+        hand_lms = hand_result.hand_landmarks[0]
+        handedness_label = hand_result.handedness[0][0].category_name
+        coords = [(lm.x, lm.y, lm.z) for lm in hand_lms]
+        state = fingers_up(coords, handedness_label)
+        raw_gesture = classify_gesture(state)
+        gesture = smoother.update(raw_gesture)
 
-    def _timestamp_ms(self):
-        return int((time.monotonic() - self._start_time) * 1000)
+        for lm in hand_lms:
+            cx, cy = int(lm.x * w), int(lm.y * h)
+            cv2.circle(frame_bgr, (cx, cy), 3, (0, 255, 0), -1)
+    else:
+        gesture = smoother.update("UNKNOWN")
 
-    def recv(self, frame):
-        # Instantiate landmarker instances inside the processing loop context
-        if self.face_landmarker is None:
-            self.face_landmarker = create_face_landmarker()
-        if self.hand_landmarker is None:
-            self.hand_landmarker = create_hand_landmarker()
+    color = GESTURE_COLORS[gesture]
 
-        img = frame.to_ndarray(format="bgr24")
-        img = cv2.flip(img, 1)
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        mp_image = to_image(rgb)
-        ts = self._timestamp_ms()
+    face_px = []
+    if face_result.face_landmarks:
+        face_lms = face_result.face_landmarks[0]
+        face_px = [(lm.x * PANEL_W, lm.y * PANEL_H) for lm in face_lms]
 
-        face_result = self.face_landmarker.detect_for_video(mp_image, ts)
-        hand_result = self.hand_landmarker.detect_for_video(mp_image, ts)
+    mesh_panel = draw_face_mesh_panel(face_px, color, PANEL_W, PANEL_H)
 
-        h, w = img.shape[:2]
+    left = cv2.resize(frame_bgr, (PANEL_W, PANEL_H))
+    cv2.putText(left, f"Gesture: {gesture}", (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-        # --- Hand gesture ---
-        gesture = "UNKNOWN"
-        if hand_result.hand_landmarks and hand_result.handedness:
-            hand_lms = hand_result.hand_landmarks[0]
-            handedness_label = hand_result.handedness[0][0].category_name
-            coords = [(lm.x, lm.y, lm.z) for lm in hand_lms]
-            state = fingers_up(coords, handedness_label)
-            raw_gesture = classify_gesture(state)
-            gesture = self.smoother.update(raw_gesture)
-
-            for lm in hand_lms:
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(img, (cx, cy), 3, (0, 255, 0), -1)
-        else:
-            gesture = self.smoother.update("UNKNOWN")
-
-        with self._lock:
-            self._last_gesture = gesture
-
-        color = GESTURE_COLORS[gesture]
-
-        # --- Face mesh panel ---
-        face_px = []
-        if face_result.face_landmarks:
-            face_lms = face_result.face_landmarks[0]
-            face_px = [(lm.x * PANEL_W, lm.y * PANEL_H) for lm in face_lms]
-
-        mesh_panel = draw_face_mesh_panel(face_px, color, PANEL_W, PANEL_H)
-
-        left = cv2.resize(img, (PANEL_W, PANEL_H))
-        cv2.putText(
-            left,
-            f"Gesture: {gesture}",
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2,
-        )
-
-        combined = np.hstack([left, mesh_panel])
-        return av.VideoFrame.from_ndarray(combined, format="bgr24")
+    combined_bgr = np.hstack([left, mesh_panel])
+    combined_rgb = cv2.cvtColor(combined_bgr, cv2.COLOR_BGR2RGB)
+    return combined_rgb, gesture
 
 
 def main():
@@ -115,8 +100,9 @@ def main():
     st.title("Face Mesh + Hand Gesture Color Control")
 
     st.markdown(
-        "Left: camera feed with hand landmarks. Right: live face mesh, "
-        "colored by your hand gesture."
+        "Take a photo below. Left: your photo with hand landmarks. "
+        "Right: face mesh, colored by your hand gesture. "
+        "(Snapshot-based -- click **Take Photo** again for a new frame.)"
     )
 
     with st.sidebar:
@@ -129,15 +115,36 @@ def main():
             "- **Point** -> Magenta\n"
             "- anything else -> Gray"
         )
+        st.caption(
+            "Rule-based classifier on 2D landmarks -- thumb detection is "
+            "the weakest point, and peace/point can be confused. Each "
+            "photo is classified independently (no smoothing across "
+            "separate snapshots)."
+        )
+        st.caption(
+            "First load downloads two small model files -- may take a "
+            "few seconds."
+        )
 
-    # Key changed to reset cached frontend state on deployment rebuild
-    webrtc_streamer(
-        key="face-gesture-mesh-v3",
-        video_processor_factory=FaceGestureProcessor,
-        rtc_configuration=RTC_CONFIGURATION,
-        media_stream_constraints={"video": True, "audio": False},
-        async_processing=True,
-    )
+    if "smoother" not in st.session_state:
+        st.session_state.smoother = GestureSmoother()
+
+    face_landmarker, hand_landmarker = load_landmarkers()
+
+    img_file = st.camera_input("Take a photo")
+
+    if img_file is not None:
+        file_bytes = np.frombuffer(img_file.getvalue(), dtype=np.uint8)
+        frame_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+        with st.spinner("Detecting face and hand..."):
+            combined_rgb, gesture = process_snapshot(
+                frame_bgr, face_landmarker, hand_landmarker,
+                st.session_state.smoother,
+            )
+
+        st.image(combined_rgb, caption=f"Detected gesture: {gesture}",
+                  use_container_width=True)
 
 
 if __name__ == "__main__":
