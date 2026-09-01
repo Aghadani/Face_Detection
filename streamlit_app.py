@@ -1,25 +1,3 @@
-"""
-Streamlit app: Face Mesh + Hand Gesture Color Control (no external services)
-
-Uses st.camera_input instead of streamlit-webrtc. This is a deliberate
-trade-off: st.camera_input captures one photo per click rather than a
-continuous video stream, so this is NOT live/real-time video -- but it
-has zero external dependencies (no WebRTC, no STUN/TURN server, no
-third-party API/account needed) and works reliably on Streamlit
-Community Cloud out of the box.
-
-Background: an earlier version of this app used streamlit-webrtc for
-true continuous live video. That requires a WebRTC peer connection
-between the browser and the server, and Streamlit Community Cloud's
-network does not complete that connection with a STUN server alone --
-it needs a TURN relay (a third-party service, e.g. Twilio, or a
-self-hosted coturn server). Since a TURN service was explicitly ruled
-out, this version avoids WebRTC entirely.
-
-Run:
-    streamlit run streamlit_app.py
-"""
-
 import time
 
 import cv2
@@ -33,7 +11,12 @@ from gesture_logic import (
     draw_face_mesh_panel,
     fingers_up,
 )
-from landmarkers import create_face_landmarker, create_hand_landmarker, to_image
+from landmarkers import (
+    RunningMode,
+    create_face_landmarker,
+    create_hand_landmarker,
+    to_image,
+)
 
 PANEL_W, PANEL_H = 480, 360
 
@@ -44,9 +27,8 @@ def load_landmarkers():
     Uses IMAGE running mode -- each camera_input capture is an independent
     photo with no temporal relationship to the previous one, so VIDEO
     mode's frame-to-frame tracking assumptions don't apply here."""
-    import mediapipe.tasks.python.vision as mp_vision
-    face = create_face_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
-    hand = create_hand_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
+    face = create_face_landmarker(running_mode=RunningMode.IMAGE)
+    hand = create_hand_landmarker(running_mode=RunningMode.IMAGE)
     return face, hand
 
 
