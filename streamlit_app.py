@@ -22,7 +22,7 @@ def load_landmarkers():
     Uses IMAGE running mode -- each camera_input capture is an independent
     photo with no temporal relationship to the previous one, so VIDEO
     mode's frame-to-frame tracking assumptions don't apply here."""
-    import mediapipe.tasks.python.vision as mp_vision
+    from mediapipe.tasks.python import vision as mp_vision
     face = create_face_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
     hand = create_hand_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
     return face, hand
