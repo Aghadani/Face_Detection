@@ -1,20 +1,3 @@
-"""
-Landmarker setup using MediaPipe's Tasks API.
-
-The legacy `mediapipe.solutions.face_mesh` / `mediapipe.solutions.hands`
-API used in earlier versions of this project no longer exists in current
-mediapipe releases (confirmed: mediapipe>=0.10.30 and 1.x ship only
-`mediapipe.tasks`, with no `mediapipe.solutions` module at all). This
-module builds FaceLandmarker / HandLandmarker from the Tasks API instead,
-which is the actively maintained replacement.
-
-Both landmarkers require a `.task` model bundle file. These are not
-bundled with the pip package -- they're downloaded on first run and
-cached locally. URLs below are Google's official model hosting,
-confirmed via https://developers.google.com/edge/mediapipe/solutions/vision
-and the official mediapipe-samples repo (as of Aug 2026).
-"""
-
 import os
 import tempfile
 import urllib.request
@@ -22,6 +5,14 @@ import urllib.request
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+
+# Re-exported so other modules never need their own separate import path
+# into mediapipe.tasks.python.vision -- a duplicate import from a second
+# call site (e.g. inside a Streamlit @st.cache_resource function) has
+# been observed to break with an ImportError on this package, likely
+# because mediapipe.tasks has an unusually-named nested package literally
+# called "python". Import RunningMode from here instead.
+RunningMode = mp_vision.RunningMode
 
 FACE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
