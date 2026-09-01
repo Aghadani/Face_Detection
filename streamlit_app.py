@@ -201,6 +201,31 @@ def inject_styles():
             border-radius:18px;
             padding:10px;
             background:#0a0d12;
+            overflow:hidden;
+        }
+
+        div[data-testid="stCameraInput"] button {
+            background:#151b24 !important;
+            color:#eef2f7 !important;
+            border:1px solid #303a48 !important;
+            border-radius:10px !important;
+            font-weight:600 !important;
+            min-height:42px !important;
+        }
+
+        div[data-testid="stCameraInput"] button:hover {
+            background:#202936 !important;
+            border-color:#566477 !important;
+            color:#ffffff !important;
+        }
+
+        div[data-testid="stCameraInput"] button p,
+        div[data-testid="stCameraInput"] button span {
+            color:#eef2f7 !important;
+        }
+
+        div[data-testid="stCameraInput"] label {
+            color:#7f8b9d !important;
         }
 
         .footer {
@@ -421,9 +446,11 @@ def main():
             '<div class="panel-title"><span>01 · Camera</span><span class="hint">Capture a frame</span></div>',
             unsafe_allow_html=True,
         )
-        img_file = st.camera_input("Camera capture")
+        st.caption("Position your face in frame, then select **Take Photo** to run the vision pipeline.")
+        img_file = st.camera_input("Camera capture", label_visibility="collapsed")
 
     gesture = "UNKNOWN"
+    face_result = None
 
     if img_file is not None:
         file_bytes = np.frombuffer(img_file.getvalue(), dtype=np.uint8)
@@ -479,7 +506,7 @@ def main():
 
         with right:
             st.markdown(
-                '<div class="panel-title"><span>02 · Mesh Field</span><span class="hint">No frame loaded</span></div>',
+                '<div class="panel-title"><span>02 · Mesh Field</span><span class="hint">Awaiting capture</span></div>',
                 unsafe_allow_html=True,
             )
             empty = np.zeros((MESH_H, MESH_W, 3), dtype=np.uint8)
@@ -488,7 +515,7 @@ def main():
             for y in range(0, MESH_H, 60):
                 cv2.line(empty, (0, y), (MESH_W, y), (13, 18, 25), 1)
             cv2.putText(
-                empty, "MESH FIELD READY",
+                empty, "CAPTURE TO INITIALIZE MESH",
                 (MESH_W // 2 - 95, MESH_H // 2),
                 cv2.FONT_HERSHEY_SIMPLEX, .65, (85, 97, 113), 1, cv2.LINE_AA
             )
@@ -507,7 +534,7 @@ def main():
         )
 
     with c2:
-        detected = "Detected" if img_file is not None and face_result.face_landmarks else "Waiting"
+        detected = "Detected" if img_file is not None and face_result is not None and face_result.face_landmarks else "Waiting"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Face</div>'
             f'<div class="metric-value">{detected}</div>'
