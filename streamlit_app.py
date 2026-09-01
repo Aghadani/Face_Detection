@@ -241,7 +241,7 @@ def color_name(gesture):
 # ---------- Processing ----------
 @st.cache_resource
 def load_landmarkers():
-    import mediapipe.tasks.python.vision as mp_vision
+    from mediapipe.tasks.python import vision as mp_vision
 
     face = create_face_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
     hand = create_hand_landmarker(running_mode=mp_vision.RunningMode.IMAGE)
@@ -288,9 +288,9 @@ def draw_premium_mesh(face_px, color_bgr, width, height, previous_points=None):
     # A compact deterministic graph keeps the display elegant instead of
     # drawing every possible connection.
     try:
-        import mediapipe as mp
+        from mediapipe.tasks.python import vision as mp_vision
 
-        connections = mp.tasks.vision.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
+        connections = mp_vision.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
         for connection in connections:
             a = connection.start
             b = connection.end
