@@ -2,7 +2,7 @@ import os
 import tempfile
 import urllib.request
 
-
+import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
