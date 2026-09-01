@@ -1,9 +1,3 @@
-"""
-Shared logic for gesture classification and face-mesh rendering,
-used by both main.py (OpenCV desktop app) and streamlit_app.py
-(Streamlit + streamlit-webrtc app).
-"""
-
 import collections
 
 import cv2
@@ -55,7 +49,15 @@ def fingers_up(landmarks, handedness_label):
 
 def classify_gesture(finger_state):
     """Map a finger up/down pattern to a named gesture. Returns 'UNKNOWN'
-    if the pattern doesn't cleanly match one of the defined gestures."""
+    if the pattern doesn't cleanly match one of the defined gestures.
+
+    Priority order matters here: THUMBS_UP is checked first specifically
+    because it's the one gesture defined by thumb state, and thumb
+    detection (x-position based) is the least reliable of the five
+    signals. FIST and OPEN_PALM deliberately do NOT require thumb
+    agreement -- requiring all 5 fingers to match was causing a clear
+    open-palm or fist to misclassify as UNKNOWN whenever the thumb read
+    ambiguously, which is common even in an unambiguous real-world pose."""
     thumb, index, middle, ring, pinky = (
         finger_state["thumb"],
         finger_state["index"],
@@ -64,15 +66,18 @@ def classify_gesture(finger_state):
         finger_state["pinky"],
     )
 
-    if not any([thumb, index, middle, ring, pinky]):
-        return "FIST"
-    if all([thumb, index, middle, ring, pinky]):
-        return "OPEN_PALM"
-    if index and middle and not ring and not pinky and not thumb:
-        return "PEACE"
-    if thumb and not any([index, middle, ring, pinky]):
+    four_up = index and middle and ring and pinky
+    four_down = not any([index, middle, ring, pinky])
+
+    if thumb and four_down:
         return "THUMBS_UP"
-    if index and not any([middle, ring, pinky, thumb]):
+    if four_down:
+        return "FIST"
+    if four_up:
+        return "OPEN_PALM"
+    if index and middle and not ring and not pinky:
+        return "PEACE"
+    if index and not middle and not ring and not pinky:
         return "POINT"
     return "UNKNOWN"
 
