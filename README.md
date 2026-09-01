@@ -5,30 +5,50 @@ your camera feed, and recolors the mesh based on your hand gesture.
 
 Two versions in this repo:
 
-- `streamlit_app.py` — browser app, **no external dependencies**.
-  Snapshot-based: click "Take Photo," see the result, click again for
-  the next frame. Not continuous live video (see below for why).
+- `streamlit_app.py` — browser app, continuous live video via
+  `streamlit-webrtc`, using a free TURN relay (see below).
 - `main.py` — desktop OpenCV window version, continuous live video via
   your local webcam. Run with `python main.py`, not through Streamlit.
 
-## Why the Streamlit version is snapshot-based, not live video
+## Live video + free TURN relay
 
-Continuous live webcam video into a Python backend running on a server
-(not your own machine) requires WebRTC. An earlier version of this app
-used `streamlit-webrtc` for that. It failed to connect on Streamlit
-Community Cloud — confirmed against `streamlit-webrtc`'s own
-maintainer's documented findings: Streamlit Community Cloud's network
-does not complete a WebRTC peer connection with a STUN server alone: it
-requires a TURN relay, which means a third-party service (e.g. Twilio)
-or a self-hosted TURN server.
+Streamlit Community Cloud's network does not complete a WebRTC
+connection with STUN alone (confirmed against `streamlit-webrtc`'s own
+maintainer's documented findings) — it needs a TURN relay. This app
+uses a free TURN relay, no paid service, no VPS to run yourself.
 
-Since no third-party service is being used, this version drops WebRTC
-entirely and uses `st.camera_input` instead — a plain HTTP photo
-upload, no peer connection, no STUN/TURN, works reliably on Streamlit
-Cloud. The real trade-off: it's click-to-capture, not truly live.
+**Default: zero-signup, works immediately, but less reliable.**
+Uses Open Relay Project's static public TURN credentials
+(`openrelayproject`/`openrelayproject`). Genuinely free, no account
+needed — but it's a shared, unauthenticated public resource, confirmed
+via a real user report that it can silently stop working under load,
+and `streamlit-webrtc`'s own maintainer flags it as unreliable. If
+your video won't connect, this relay being overloaded is the most
+likely reason, not a bug in the app.
 
-If you later decide a third-party TURN service is acceptable, the
-WebRTC + Twilio version can be rebuilt — ask and I'll put it back.
+**More reliable, still free: a Metered account.** Sign up free at
+metered.ca (email-based, not phone verification — worth trying if
+Twilio's phone verification didn't work for you), then set two
+Streamlit secrets:
+
+```toml
+METERED_APP_NAME = "your-app-name"   # the subdomain shown in your dashboard
+METERED_API_KEY = "your-api-key"
+```
+
+`ice_servers.py` fetches time-bound credentials from Metered's API
+when these are set, and automatically falls back to the static public
+credentials if they're missing or the request fails — so the app
+works either way, just more reliably with a key configured.
+
+I verified the fallback TURN hostname resolves via DNS, but a full
+TURN relay handshake needs live UDP traffic I can't test from the
+environment I build this in — your actual deployment is the real test
+of whether either path connects reliably for you.
+
+If neither free option is reliable enough, the remaining paths are a
+self-hosted coturn server (needs your own VPS — ask if you want this
+built out) or a paid TURN service.
 
 ## Setup
 
@@ -52,9 +72,8 @@ the system temp dir — needs outbound internet access once.
 | Point       | Only index finger extended               | Magenta    |
 | (anything else) | -                                    | Gray (default) |
 
-Each snapshot is classified independently — there's no frame-to-frame
-smoothing the way the desktop version has, since separate photos aren't
-a continuous stream.
+Gesture classification is smoothed over the last 8 frames (majority
+vote) to reduce flicker between individual misreads.
 
 ## Known reliability limits
 
@@ -63,6 +82,13 @@ trained gesture-recognition model:
 
 - **Thumb detection is the weakest point** — assumes a roughly frontal
   hand orientation; rotate your hand 30-40 degrees and it misclassifies.
+  `OPEN_PALM` and `FIST` no longer require thumb agreement (an earlier
+  version did, and a clear open-palm or fist would misclassify as
+  `UNKNOWN` whenever the thumb read ambiguously — very common even in
+  an unambiguous real pose). The remaining trade-off: `THUMBS_UP` is
+  checked first since it's the one gesture defined by thumb state alone,
+  so a real fist where the thumb *falsely* reads as "up" can register
+  as `THUMBS_UP` instead of `FIST`.
 - **Peace vs. Point can be confused** at ambiguous hand angles.
 - **Lighting and occlusion** degrade MediaPipe's landmark detection
   before your gesture logic even runs.
@@ -91,14 +117,25 @@ anymore). This project uses the newer Tasks API (`FaceLandmarker` /
 
 ## Deploying to Streamlit Community Cloud: native library errors
 
-If you see `ImportError`/`OSError` for `libGL.so.1`, `libEGL.so.1`, or
-`libGLESv2.so.2`: mediapipe's compiled C bindings link against the full
-GL/EGL/GLES stack even for CPU-only inference. `requirements.txt` uses
-`opencv-python-headless` (no GUI/GL dependency itself), and
-`packages.txt` lists the system libraries mediapipe's native code still
-needs: `libgl1`, `libegl1`, `libgles2`. If a related library in this
-same family shows up missing, it's the same pattern — add it to
-`packages.txt` the same way.
+If you see `ImportError`/`OSError` for `libGL.so.1`, `libEGL.so.1`,
+`libGLESv2.so.2`, or `libgthread-2.0.so.0`: mediapipe's compiled C
+bindings link against the full GL/EGL/GLES stack even for CPU-only
+inference, and `cv2` itself needs glib's threading support.
+`requirements.txt` uses `opencv-python-headless` (no GUI/GL dependency
+itself), and `packages.txt` lists the system libraries still needed:
+`libgl1`, `libegl1`, `libgles2`, `libglib2.0-0t64`.
+
+Note the `t64` suffix on the glib package — that's not a typo. Debian
+trixie (the base image Streamlit Cloud uses) renamed `libglib2.0-0` to
+`libglib2.0-0t64` as part of a distro-wide 64-bit `time_t` ABI
+transition (confirmed via Debian's own package pages and bug tracker).
+The old name (`libglib2.0-0`) still exists as an orphaned package on
+this image with a broken dependency on `libffi7` that isn't
+installable — which is exactly the apt error you'd get if you tried
+adding it back under the old name.
+
+If a related library in this same family shows up missing next, it's
+the same pattern — add it to `packages.txt` the same way.
 
 ## Desktop version (`main.py`)
 
@@ -111,8 +148,10 @@ not deployable to a web server. Press `q` to quit.
 
 ## Files
 
-- `streamlit_app.py` — Streamlit browser app (snapshot-based, no
-  external dependencies)
+- `streamlit_app.py` — Streamlit browser app (continuous live video via
+  WebRTC + free TURN relay)
+- `ice_servers.py` — TURN/STUN config: Metered API key if configured,
+  falls back to free static public credentials
 - `main.py` — desktop OpenCV window version (continuous live video,
   local only)
 - `gesture_logic.py` — shared, unit-tested gesture classification and
