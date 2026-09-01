@@ -1,23 +1,3 @@
-"""
-Face Mesh + Hand Gesture Color Control (desktop / OpenCV window version)
---------------------------------------------------------------------------
-Split-screen live app:
-  LEFT  : raw webcam feed with hand landmarks + detected gesture label
-  RIGHT : black canvas showing the live face mesh wireframe, colored
-          according to the current hand gesture
-
-Run:
-    python main.py
-
-Requires a webcam. Press 'q' to quit.
-
-For a browser-based / deployable version, see streamlit_app.py instead --
-this script uses cv2.imshow(), which only works in a local desktop window.
-
-Uses MediaPipe's Tasks API (see landmarkers.py) -- the legacy
-mediapipe.solutions API has been removed from current mediapipe releases.
-"""
-
 import time
 
 import cv2
