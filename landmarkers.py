@@ -6,12 +6,7 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
-# Re-exported so other modules never need their own separate import path
-# into mediapipe.tasks.python.vision -- a duplicate import from a second
-# call site (e.g. inside a Streamlit @st.cache_resource function) has
-# been observed to break with an ImportError on this package, likely
-# because mediapipe.tasks has an unusually-named nested package literally
-# called "python". Import RunningMode from here instead.
+
 RunningMode = mp_vision.RunningMode
 
 FACE_MODEL_URL = (
@@ -41,10 +36,7 @@ def _ensure_model(url, filename):
 
 
 def create_face_landmarker(running_mode=mp_vision.RunningMode.VIDEO):
-    """Returns a FaceLandmarker. running_mode=VIDEO for a continuous frame
-    stream with increasing timestamps; running_mode=IMAGE for independent,
-    unconnected single photos (e.g. st.camera_input snapshots) where there
-    is no temporal continuity between captures to track."""
+    
     model_path = _ensure_model(FACE_MODEL_URL, "face_landmarker.task")
     options = mp_vision.FaceLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=model_path),
