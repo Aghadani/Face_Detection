@@ -16,14 +16,6 @@ _FALLBACK_ICE_SERVERS = [
 
 @st.cache_data(ttl=900)
 def get_ice_servers():
-    """Fetch fresh Metered TURN credentials for WebRTC.
-
-    Streamlit secrets must contain:
-        METERED_APP_NAME = "your-mettered-app-name"
-        METERED_API_KEY  = "your-mettered-api-key"
-
-    Returns a list suitable for RTCConfiguration(iceServers=[...]).
-    """
 
     # Read credentials from Streamlit secrets.
     try:
