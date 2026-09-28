@@ -23,10 +23,10 @@ def main():
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        raise RuntimeError("Could not open webcam (index 0). "
-                            "Check camera permissions / index.")
+        raise RuntimeError("Could not open webcam (index 0). Check camera permissions.")
 
     start_time = time.monotonic()
+    last_ts = -1
     print("Running. Press 'q' in the window to quit.")
 
     while True:
@@ -37,7 +37,12 @@ def main():
         frame = cv2.flip(frame, 1)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = to_image(rgb)
-        ts = int((time.monotonic() - start_time) * 1000)
+        
+        raw_ts = int((time.monotonic() - start_time) * 1000)
+        if raw_ts <= last_ts:
+            raw_ts = last_ts + 1
+        last_ts = raw_ts
+        ts = raw_ts
 
         face_result = face_landmarker.detect_for_video(mp_image, ts)
         hand_result = hand_landmarker.detect_for_video(mp_image, ts)
