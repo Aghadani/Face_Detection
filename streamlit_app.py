@@ -17,15 +17,10 @@ from gesture_logic import (
 from ice_servers import get_ice_servers
 from landmarkers import RunningMode, create_face_landmarker, create_hand_landmarker, to_image
 
-PANEL_W, PANEL_H = 480, 360  # smaller per-panel size keeps WebRTC bitrate reasonable
+PANEL_W, PANEL_H = 480, 360
 
 
 class FaceGestureProcessor(VideoProcessorBase):
-    """Runs face-mesh + hand-gesture detection per frame and returns a
-    single combined (split-screen) frame. State the main Streamlit thread
-    reads (current gesture) is guarded by a lock, since recv() runs on a
-    separate WebRTC worker thread."""
-
     def __init__(self):
         self.face_landmarker = create_face_landmarker(running_mode=RunningMode.VIDEO)
         self.hand_landmarker = create_hand_landmarker(running_mode=RunningMode.VIDEO)
@@ -34,6 +29,7 @@ class FaceGestureProcessor(VideoProcessorBase):
         self._lock = threading.Lock()
         self._last_gesture = "UNKNOWN"
         self._start_time = time.monotonic()
+        self._last_ts = -1  # Tracks last timestamp to guarantee strict monotonicity
 
     @property
     def last_gesture(self):
@@ -41,9 +37,11 @@ class FaceGestureProcessor(VideoProcessorBase):
             return self._last_gesture
 
     def _timestamp_ms(self):
-        # VIDEO mode requires monotonically increasing timestamps;
-        # wall-clock-since-start guarantees that regardless of frame gaps.
-        return int((time.monotonic() - self._start_time) * 1000)
+        current_ts = int((time.monotonic() - self._start_time) * 1000)
+        if current_ts <= self._last_ts:
+            current_ts = self._last_ts + 1
+        self._last_ts = current_ts
+        return current_ts
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
@@ -100,27 +98,6 @@ def main():
         "Left: camera feed with hand landmarks. Right: live face mesh, "
         "colored by your hand gesture."
     )
-
-    with st.sidebar:
-        st.subheader("Gesture -> Color")
-        st.markdown(
-            "- **Fist** -> Red\n"
-            "- **Open palm** -> Green\n"
-            "- **Peace** -> Blue\n"
-            "- **Thumbs up** -> Yellow\n"
-            "- **Point** -> Magenta\n"
-            "- anything else -> Gray"
-        )
-        st.caption(
-            "Rule-based classifier on 2D landmarks -- thumb detection is "
-            "the weakest signal. Smoothed over 8 frames to reduce flicker."
-        )
-        st.caption(
-            "Using a free public TURN relay by default -- if the video "
-            "won't connect, it's likely that shared relay being "
-            "overloaded, not a bug. See ice_servers.py for a more "
-            "reliable free alternative."
-        )
 
     ice_servers = get_ice_servers()
     rtc_configuration = RTCConfiguration({"iceServers": ice_servers})
